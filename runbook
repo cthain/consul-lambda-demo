@@ -1,0 +1,239 @@
+#!/bin/bash
+
+bold=$(tput bold)
+italic=$(tput sitm)
+normal=$(tput sgr0)
+red=$(tput setaf 1)
+underline=$(tput smul)
+
+buildLambdaFn() {
+  local lambda="$1"
+  echo -n "${bold}Build ${lambda}...${normal} "
+  ( \
+    cd ../src/${lambda}/ && \
+    GOOS=linux GOARCH=amd64 go build . && \
+    zip ../../lambda/${lambda}.zip ${lambda} \
+  )
+  echo "  Packaged ${lambda}.zip"
+  echo ""
+}
+
+cont() {
+  echo ""
+  echo -n "Press enter to continue... "
+  read
+  echo ""
+}
+
+die() {
+  echo -e "${bold}${red}>>>${normal} $*" >& 2
+  exit 1
+}
+
+echoStep() {
+  local msg="$1"
+  shift
+  echo "${bold}${underline}${msg}${normal}"
+  for txt in "$@"; do
+    echo -e "$txt"
+  done
+  cont
+}
+
+readVar() {
+  local val=""
+  while [ -z "$val" ]; do
+    echo -n "$@" >&2
+    read val
+  done
+  echo "$val"
+}
+
+runStep() {
+  local msg="$1"
+  shift
+  echo "${bold}${underline}${msg}${normal}"
+  for cmd in "$@"; do
+    echo "  $cmd"
+    $cmd
+  done
+  echo ""
+}
+
+# This resests the demo to it's inital state
+reset() {
+  if [ "$1" != "-f" ]; then
+    echo -n "${bold}You are about to reset the demo!${normal} Are you sure you want to proceed? yes or no: "
+    read ans
+    [ "$ans" != "yes" ] && die "Reset aborted without changes."
+  fi
+  echo "Resetting"
+
+  # Destroy the lambda resources
+  (
+    cd lambda
+    terraform destroy -auto-approve \
+      -var "name=${DEPLOY_NAME}" \
+      -var "region=${AWS_REGION}" \
+      -var "consul_datacenter=${CONSUL_DC}" \
+      -var "consul_mesh_gateway_uri=${CONSUL_MESH_GATEWAY_URI}" \
+      -var "extension_data_prefix=${CONSUL_DC}"
+    cd ..
+  )
+
+  # Remove derived lambda artifacts
+  rm -rf \
+    lambda/consul-lambda-extension.zip \
+    lambda/lambda-payments.zip \
+    lambda/lambda-products.zip
+
+  # Reset the Lambda GW registration and configuration
+  consul acl policy delete -name "${POLICY_NAME}"
+  kubectl delete terminating-gateway/terminating-gateway
+  kubectl delete service-intentions/lambda-payments
+  kubectl delete service-intentions/product-api-db
+  kubectl delete service-splitter/payments
+  kubectl apply -f modules/k8s/hashicups/consul_resources/service-intentions/service-intentions-product-api-db.yaml
+  curl -H "Authorization: Bearer ${CONSUL_HTTP_TOKEN}" ${CONSUL_HTTP_ADDR}/v1/catalog/deregister -XPUT -d'{"Node":"lambdas"}'
+
+  # Reset the product-api-db
+  local tables="
+    coffee_ingredients
+    coffees
+    ingredients
+    order_items
+    orders
+    tokens
+  "
+  local padPod=$(kubectl get pods | grep product-api-db | awk '{print $ 1}')
+  for table in $tables; do
+    kubectl exec ${padPod} -c product-api-db -- psql -U postgres -d products -c "DROP TABLE ${table} CASCADE;"
+  done
+  kubectl exec ${padPod} -c product-api-db -- psql -U postgres -d products -a -f '/docker-entrypoint-initdb.d/products.sql'
+}
+
+# Main
+
+# Ensure the demo has been deployed.
+[[ -n "$(terraform show -no-color)" ]] || die "The demo infrastructure is not deployed.\nRun:\n\n  terraform init && terraform apply\n"
+
+runStep "Configure the environment for the deployed infrastructure" \
+  ". env.sh"
+
+# Check for a subcommand.. only reset is supported.
+if [ -n "$1" ]; then
+  case "$1" in
+    "reset") shift ; reset "$@" ; exit 0 ;;
+    *) die "Unknown command '$1'" ;;
+  esac
+fi
+
+echoStep "Open the Consul UI" \
+  "\n  ${CONSUL_HTTP_ADDR}" \
+  "  Login token: ${CONSUL_HTTP_TOKEN}\n" \
+  "    - View the service catalog" \
+  "    - View the nodes" \
+  "    - View the intentions"
+
+echoStep "Open the HashiCups UI" \
+  "\n  http://${HASHICUPS_ADDR}\n" \
+  "    - Browse the coffees" \
+  "    - Order a coffee. Note that encryption is ${bold}${underline}NOT${normal} enabled!"
+
+runStep "Deploy the Lambda applications" "cd lambda/"
+
+runStep "Download the Consul Lambda extension from releases.hashicorp.com" \
+  "curl -s -o consul-lambda-extension.zip https://releases.hashicorp.com/consul-lambda-extension/0.1.0-beta2/consul-lambda-extension_0.1.0-beta2_linux_amd64.zip"
+
+echo "${bold}Build the Lambda functions${normal}"
+cont
+
+buildLambdaFn "lambda-payments"
+buildLambdaFn "lambda-products"
+
+echo "${bold}Deploy the Lambda functions with Terraform${normal}"
+cont
+
+runStep "Deploy Lambda functions with Terraform" \
+  "terraform init" \
+  "terraform apply -auto-approve \
+    -var name=${DEPLOY_NAME} \
+    -var region=${AWS_REGION} \
+    -var consul_datacenter=${CONSUL_DC} \
+    -var consul_mesh_gateway_uri=${CONSUL_MESH_GATEWAY_URI} \
+    -var extension_data_prefix=${CONSUL_DC}"
+
+echoStep "List Lambda functions" "aws lambda list-functions --region ${AWS_REGION} | jq '.Functions[].FunctionName'"
+aws lambda list-functions --region ${AWS_REGION} | jq '.Functions[].FunctionName'
+echo ""
+
+echoStep "List Lambda layers" "aws lambda list-layers --region ${AWS_REGION} | jq '.Layers[].LayerName'"
+aws lambda list-layers --region ${AWS_REGION} | jq '.Layers[].LayerName'
+echo ""
+
+echoStep "Register lambda-payments with the terminating-gateway" \
+  "  vi gateway-registration.yaml; kubectl apply -f gateway-registration.yaml"
+vi gateway-registration.yaml; kubectl apply -f gateway-registration.yaml
+echo ""
+
+echoStep "Create service intentions for Lambda functions" \
+  "  vi service-intentions.yaml; kubectl apply -f service-intentions.yaml"
+vi service-intentions.yaml; kubectl apply -f service-intentions.yaml
+echo ""
+
+echoStep "Create service splitter to route traffic to lambda-payments" \
+  "  vi service-splitter.yaml; kubectl apply -f service-splitter.yaml"
+vi service-splitter.yaml; kubectl apply -f service-splitter.yaml
+echo ""
+
+echoStep "Open the Consul UI" \
+  "\n  ${CONSUL_HTTP_ADDR}\n" \
+  "    - View the Lambda services" \
+  "    - View the terminating gateway" \
+  "    - View the intentions" \
+  "    - View the routes for payments"
+
+echo "Create a new coffee"
+COFFEE_NAME=$(readVar "  Name of the new coffee: ")
+COFFEE_TEASER=$(readVar "  Teaser line of the new coffee: ")
+COFFEE_PAYLOAD="$(echo "{
+  \"method\": \"PUT\",
+  \"coffee\": {
+    \"name\": \"$COFFEE_NAME\",
+    \"teaser\": \"$COFFEE_TEASER\",
+    \"collection\": \"Discoveries\",
+    \"origin\": \"re:Invent 2022\",
+    \"color\": \"#444\",
+    \"description\": \"\",
+    \"price\": 200,
+    \"image\": \"/hashicorp.png\",
+    \"ingredients\": [
+      {
+        \"id\": 1,
+        \"quantity\": 40,
+        \"unit\": \"ml\"
+      },
+      {
+        \"id\": 5,
+        \"quantity\": 100,
+        \"unit\": \"ml\"
+      }
+    ]
+  }
+}
+" | base64)"
+echo ""
+
+echoStep "Invoke lambda-products to create the new coffee" \
+  "  aws lambda invoke --region $AWS_REGION --function-name lambda-products --payload ${COFFEE_PAYLOAD} /dev/stdout | jq ."
+aws lambda invoke --region $AWS_REGION --function-name lambda-products --payload "${COFFEE_PAYLOAD}" /dev/stdout | jq .
+echo ""
+
+echoStep "Open the HashiCups UI" \
+  "\n  ${HASHICUPS_ADDR}\n" \
+  "    - View the new coffee" \
+  "    - Order the new coffee. Note that encryption is now enabled!"
+
+echo "${bold}Thank you!${normal}"
+echo "  ${italic}${underline}The end${normal}"
+echo ""

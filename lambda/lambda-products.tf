@@ -1,7 +1,3 @@
-locals {
-  lambda_products = "lambda-products"
-}
-
 resource "aws_lambda_layer_version" "consul_lambda_extension" {
   layer_name       = "consul-lambda-extension"
   filename         = "consul-lambda-extension.zip"
@@ -10,11 +6,11 @@ resource "aws_lambda_layer_version" "consul_lambda_extension" {
 }
 
 resource "aws_lambda_function" "lambda_products" {
-  function_name    = local.lambda_products
-  filename         = "${local.lambda_products}.zip"
-  source_code_hash = filebase64sha256("${local.lambda_products}.zip")
+  function_name    = "lambda-products"
+  filename         = "lambda-products.zip"
+  source_code_hash = filebase64sha256("lambda-products.zip")
   role             = aws_iam_role.lambda.arn
-  handler          = local.lambda_products
+  handler          = "lambda-products"
   runtime          = "go1.x"
   layers           = [aws_lambda_layer_version.consul_lambda_extension.arn]
   tags = {
