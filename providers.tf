@@ -1,8 +1,13 @@
 terraform {
+  backend "s3" {
+    bucket = "cftc-demo"
+    key    = "hashicups/demo"
+    region = "us-west-2"
+  }
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 3.43"
     }
     hcp = {
       source  = "hashicorp/hcp"

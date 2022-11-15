@@ -21,19 +21,13 @@ module "infra" {
 module "k8s_hashicups" {
   source = "./modules/k8s"
 
-  hcp_cluster_id        = module.infra.hcp_cluster_id
-  consul_hosts          = module.infra.consul_hosts
   k8s_api_endpoint      = module.infra.k8s_api_endpoint
   consul_version        = module.infra.consul_version
-  boostrap_acl_token    = module.infra.boostrap_acl_token
-  consul_ca_file        = module.infra.consul_ca_file
   datacenter            = module.infra.datacenter
-  gossip_encryption_key = module.infra.gossip_encryption_key
   eks_cluster_id        = module.infra.eks_cluster_id
   region                = var.region
   security_group        = module.infra.security_group
 }
-
 
 module "remove_kubernetes_backed_enis" {
   source = "github.com/webdog/terraform-kubernetes-delete-eni"

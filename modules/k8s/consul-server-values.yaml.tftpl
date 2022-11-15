@@ -1,0 +1,22 @@
+global:
+  enabled: false
+  name: consul
+  datacenter: ${datacenter}
+  image: "hashicorp/consul:${consul_version}"
+
+server:
+  enabled: true
+  exposeService:
+    enabled: true
+  extraConfig: |
+    {
+      "connect": {
+        "enable_serverless_plugin": true
+      }
+    }
+
+connectInject:
+  enabled: false
+
+controller:
+  enabled: false

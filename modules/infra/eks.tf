@@ -26,6 +26,27 @@ module "eks" {
       }
     }
   }
+  fargate_profiles = {
+    default = {
+      name      = "default"
+      subnet_ids = module.vpc.private_subnets
+      selectors = [
+        {
+          namespace = "consul"
+        },
+        {
+          namespace = "default"
+        }
+      ]
+      tags = {
+        Owner = "default"
+      }
+      timeouts = {
+        create = "20m"
+        delete = "20m"
+      }
+    }
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "invoke_lambda" {

@@ -53,8 +53,8 @@ variable "consul_datacenter" {
 
 variable "consul_version" {
   type        = string
-  description = "The HCP Consul version"
-  default     = "v1.13.2"
+  description = "The Consul version"
+  default     = "v1.14.0-beta1"
 }
 
 variable "consul_tier" {

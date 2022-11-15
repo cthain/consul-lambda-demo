@@ -6,14 +6,14 @@ output "region" {
   value = var.region
 }
 
-output "consul_http_addr" {
-  value = module.infra.consul_addr
-}
-
-output "consul_http_token" {
-  value     = module.infra.consul_token
-  sensitive = true
-}
+#output "consul_http_addr" {
+#  value = module.infra.consul_addr
+#}
+#
+#output "consul_http_token" {
+#  value     = module.infra.consul_token
+#  sensitive = true
+#}
 
 output "consul_datacenter" {
   value = var.consul_datacenter

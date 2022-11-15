@@ -7,13 +7,12 @@ locals {
 module "lambda_registrator" {
   source             = "hashicorp/consul-lambda/aws//modules/lambda-registrator"
   version            = "0.1.0-beta2"
-  name               = "lambda-registrator"
+  name               = "hashicups-lambda-registrator"
   ecr_image_uri      = local.private_lr_image
   subnet_ids         = module.vpc.private_subnets
   security_group_ids = [module.vpc.default_security_group_id]
 
-  consul_http_addr             = hcp_consul_cluster.main.consul_public_endpoint_url
-  consul_http_token_path       = aws_ssm_parameter.token.name
+  consul_http_addr             = "http://a2374b08f40524493b5302ff0dc49508-2071368805.us-west-2.elb.amazonaws.com:8500"
   consul_extension_data_prefix = "/${var.consul_datacenter}"
 
   depends_on = [
@@ -44,9 +43,9 @@ resource "null_resource" "publish_lambda_registrator" {
   ]
 }
 
-resource "aws_ssm_parameter" "token" {
-  name  = "/${var.consul_datacenter}/token"
-  type  = "SecureString"
-  value = hcp_consul_cluster_root_token.token.secret_id
-}
+#resource "aws_ssm_parameter" "token" {
+#  name  = "/${var.consul_datacenter}/token"
+#  type  = "SecureString"
+#  value = hcp_consul_cluster_root_token.token.secret_id
+#}
 

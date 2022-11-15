@@ -10,5 +10,4 @@ locals {
   service_intentions                       = fileset(path.root, local.consul_resources_path_service-intentions)
   service_defaults                         = fileset(path.root, local.consul_resources_path_service_defaults)
   consul_yamls                             = setunion(local.service_intentions, local.service_defaults)
-  secret_name                              = var.hcp_cluster_id
 }
