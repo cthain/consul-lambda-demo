@@ -1,0 +1,25 @@
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceIntentions
+metadata:
+  name: lambda-payments
+spec:
+  destination:
+    name: lambda-payments
+  sources:
+    - name: public-api
+      action: allow
+
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceIntentions
+metadata:
+  name: product-api-db
+spec:
+  destination:
+    name: product-api-db
+  sources:
+    - name: product-api
+      action: allow
+    - name: lambda-products
+      action: allow
